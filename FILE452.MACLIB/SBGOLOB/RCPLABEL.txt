@@ -1,0 +1,12 @@
+         MACRO
+         RCPLABEL &L
+         GBLC  &DYNP
+         SPACE 1
+***********************************************************************
+**       EXPIRY DATE TEXT UNIT                                       **
+***********************************************************************
+         AIF   ('&L' NE '').EXPIRY
+         MNOTE 4,'Invalid Expiry Date Operand.'
+         MEXIT
+.EXPIRY  RCPVCHAR DALEXPDT,14,&L
+.EXIT    MEND
