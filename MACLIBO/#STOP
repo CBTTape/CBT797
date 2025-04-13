@@ -1,0 +1,343 @@
+         MACRO ,
+&NAME    #STOP &RC=,                    RETURN CODE                    X
+               &R0=,                    R0 CONTENTS TO PASS BACK       X
+               &R1=,                    R1 CONTENTS TO PASS BACK       X
+               &USE=BR                  RETURN TYPE (BR/BSM/SVC/PSARET)
+.*
+         SPLEVEL TEST                   OBTAIN SPLEVEL VALUE
+.*
+&NAME    DS    0H                       #STOP MACRO
+.*
+.* DEFINE SYMBOLS NEEDED
+.*
+         GBLA  &STWAC                   COUNTER FOR DEFERED WA DEFINES
+         GBLB  &STWA                    INDICATES CSECT HAS A WORK AREA
+         GBLB  &STF(16)                 CONTROL FLAG BITS, AS FOLLOWS:
+.*                                       (01) - PROC OPTION CODED
+.*                                       (02) - MAIN OPTION CODED
+.*                                       (03) - LIFO OPTION CODED
+.*                                       (04) - WKCSECT OPTION CODED
+.*                                       (05) - WKDSECT OPTION CODED
+.*                                       (06) - #START HAS BEEN CODED
+.*                                       (07) - ROUTINE IS AN SVC
+.*                                       (08) - WORK FIELDS WANTED
+.*                                       (09) - SVAREA=NO OPTION
+.*                                       (10) - SAVE=YES OPTION
+.*                                       (11) - RSECT=YES OPTION
+.*                                       (12) - SVC=(YES,BRANCH)
+.*                                       (13) - ENUC CAPPING
+         GBLC  &STACREG                 CAPWORD SAVE REGISTER
+         GBLC  &STAGREG                 GET/FREEMAIN FORMAT
+         GBLC  &STAMODE                 MODULE'S CAPPED AMODE
+         GBLC  &STAXKEY                 SVC EXECUTION KEY
+         GBLC  &STISASZ                 LIFO ISA SIZE
+         GBLC  &STNAME                  MAIN CSECT NAME
+         GBLC  &STPREF                  PREFIX CHARACTERS
+         GBLC  &STSPN                   SUBPOOL NUMBER
+         GBLC  &STWAD(1000)             WORK AREA DEFERED STACK
+         GBLC  &STWANAM                 WORK AREA NAME
+         GBLC  &SYSSPLV                 SPLEVEL
+         LCLA  &A,&B,&C,&D,&E           LOCAL
+         LCLB  &F,&G,&H,&I,&J           WORK
+         LCLC  &K,&L,&M,&N,&O,&P        SYMBOLS
+         LCLC  &XX1,&XX2,&R2
+&XX1     SETC  'BR'
+&XX2     SETC  'R14'
+         AIF   ('&STAMODE' NE '').NOTPSA USE BR IF CAPPING
+         AIF   ('&USE' NE 'BSM' AND NOT &STF(13)).NOTBSM
+&XX1     SETC  'BSM'
+&XX2     SETC  '0,R14'
+         AIF   ('&SYSSPLV' NE '1').NOTPSA
+         MNOTE 4,'**Warning** USE=BSM Changed To USE=PSARET Because SPLX
+               EVEL=1'
+         AGO   .USEPSA
+.NOTBSM  ANOP  ,
+         AIF   ('&USE' NE 'SVC').NOTSVC
+&XX1     SETC  'SVC'
+&XX2     SETC  '3'
+.NOTSVC  ANOP  ,
+         AIF   ('&USE' NE 'PSA' AND '&USE' NE 'PSARET').NOTPSA
+.USEPSA  ANOP  ,
+&XX1     SETC  'B'
+&XX2     SETC  '890'
+.NOTPSA  ANOP  ,
+.*
+.* INITIALIZE SYMBOLS, SET UP PREFIX, PICK UP ALL OPERANDS
+.*
+&P       SETC  '&STPREF'                PICK UP PREFIX
+&N       SETC  '&STWANAM'               PICK UP WORK AREA NAME
+.*
+         AIF   (&STF(7)).ST01000        SVC EXIT HERE
+.*
+.*
+.* THE FOLLOWING IS PRELIMINARIES, ETC
+.*
+         AIF   ('&R0' EQ '' AND '&R1' EQ '').ST00060   NO R0 OR R1
+&R2      SETC  'R13'
+         AIF   (&STF(09)).ST00008       SAVE=NO OPTION ?
+         L     R2,4(0,R13)              PT TO CALLER'S SAVE AREA
+&R2      SETC  'R2'
+.ST00008 AIF   ('&R0' EQ '').ST00030   NO R0, CONTINUE
+         AIF   ('&R0' EQ '0' OR '&R0' EQ 'R0').ST00020   0 OR R0
+         AIF   ('&R0' EQ '(0)' OR '&R0' EQ '(R0)').ST00020
+         AIF   ('&R0'(1,1) EQ '(').ST00010   ANOTHER REGISTER
+         LA    R0,&R0                   R0 HAS RETURN VALUE
+         AGO   .ST00020                 CONTINUE
+.ST00010 LR    R0,&R0(1)                R0 HAS RETURN VALUE
+.ST00020 ST    R0,20(0,&R2)             IN SAVE AREA
+.ST00030 AIF   ('&R1' EQ '').ST00060    NO R1, CONTINUE
+         AIF   ('&R1' EQ '1' OR '&R1' EQ 'R1').ST00050   1 OR R1
+         AIF   ('&R1' EQ '(1)' OR '&R1' EQ '(R1)').ST00050
+         AIF   ('&R1'(1,1) EQ '(').ST00040   ANOTHER REGISTER
+         LA    R1,&R1                   R1 HAS RETURN VALUE
+         AGO   .ST00050                 CONTINUE
+.ST00040 LR    R1,&R1(1)                R1 HAS RETURN VALUE
+.ST00050 ST    R1,24(0,&R2)             IN SAVE AREA
+.ST00060 AIF   ('&RC' EQ '').ST00200    NO RETURN CODE SUPPLIED
+         AIF   ('&RC'(1,1) EQ '(').ST00100   RETURN CODE IS A REG
+         LA    R15,&RC                  R15 HAS RETURN CODE
+         AGO   .ST00400                 CONTINUE
+.ST00100 AIF   ('&RC' EQ '(15)' OR '&RC' EQ '(R15)').ST00400
+         LR    R15,&RC(1)               R15 HAS RETURN CODE
+         AGO   .ST00400                 CONTINUE
+.ST00200 AIF   (NOT &STWA).ST00300      NO WORK AREA, CONTINUE
+         L     R15,&P.RCODE             R15 HAS RETURN CODE
+         AGO   .ST00400                 CONTINUE
+.ST00300 SR    R15,R15                  SET RETURN CODE TO ZERO
+.*
+.* THE FOLLOWING IS FOR NO WORK AREA OPTION, WKCSECT OPTION, AND THE
+.* PROC OPTION BUT NOT PROC(MAIN), LIFO OR PLAIN WKDSECT OPTIONS
+.*
+.ST00400 AIF   (&STF(2) OR &STF(3)).ST00500   MAIN OR LIFO, CONTINUE
+         AIF   (&STF(5) AND NOT &STF(1)).ST00500   WKDSECT, CONTINUE
+         AIF   (NOT &STF(10)).ST00560   SAVE=NO OPTION ?
+         AIF   ('&STAMODE' EQ '').ST00480 CAPPED CODE ?
+         AIF   ('&STACREG' EQ '').ST00440
+         LR    R2,&STACREG              RETRIEVE CAP WORD
+         AGO   .ST00480
+.ST00440 L     R2,&P.CAPWD              RETRIEVE CAP WORD
+.ST00480 AIF   (&STF(9)).ST00560        SVAREA=NO OPTION ?
+         L     R13,4(0,R13)             RESTORE CALLER'S SAVE AREA
+         AGO   .ST00560                 BR TO COMMON CODE
+.*
+.* THE FOLLOWING IS FOR A PLAIN WKDSECT OPTION
+.*
+.ST00500 AIF   (&STF(2) OR &STF(3)).ST00700   MAIN OR LIFO, CONTINUE
+         LR    R1,R13                   SAVE WORK AREA ADDRESS
+         AIF   ('&STAMODE' EQ '').ST00540 CAPPED CODE ?
+         AIF   ('&STACREG' EQ '').ST00520
+         LR    R2,&STACREG              RETRIEVE CAP WORD
+         AGO   .ST00540
+.ST00520 L     R2,&P.CAPWD              RETRIEVE CAP WORD
+.ST00540 AIF   (NOT &STF(10)).ST00600   JUMP IF SAVE=NO
+         L     R13,4(0,R13)             RESTORE CALLER'S SAVE AREA
+         LR    R14,R15                  SAVE RETURN CODE
+         MNOTE '         FREEMAIN &STAGREG,LV=&P.WALEN,A=(1),SP=&STSPN'
+         FREEMAIN &STAGREG,LV=&P.WALEN,A=(1),SP=&STSPN
+         LR    R15,R14                  RESTORE RETURN CODE
+.*
+.ST00560 AIF   ('&STAMODE' EQ '').ST00580 CAPPED CODE ?
+         AIF   ('&SYSSPLV' NE '1').ST00570
+         L     R1,16                    POINT TO CVT
+         TM    116(R1),128              IS THIS MVS/XA ?
+         BZR   R2                       NO, DO NOT CAP
+.ST00570 BSM   0,R2                     RESUME CALLER'S AMODE
+&K       SETC  '&P.RRR14'
+.ST00580 ANOP  ,
+&K       L     R14,12(0,R13)            RESTORE REGISTER 14
+         LM    R0,R12,20(R13)           RESTORE REGISTERS 0-12
+         &XX1  &XX2                     RETURN TO CALLER
+         SPACE 1
+         MEXIT ,
+.*
+.ST00600 LR    R13,R15                  SAVE RETURN CODE
+         L     R0,=A(&P.WALEN)
+         MNOTE '         FREEMAIN &STAGREG,LV=&P.WALEN,A=(1),SP=&STSPN'
+         FREEMAIN &STAGREG,LV=&P.WALEN,A=(1),SP=&STSPN
+         LR    R15,R13                  SET RETURN CODE
+         AIF   ('&STAMODE' EQ '').ST00680 CAPPED CODE ?
+         AIF   ('&SYSSPLV' NE '1').ST00670
+         L     R1,16                    POINT TO CVT
+         TM    116(R1),128              IS THIS MVS/XA ?
+         BZR   R2                       NO, DO NOT CAP
+.ST00670 BSM   0,R2                     RESUME CALLER'S AMODE
+&K       SETC  '&P.RRR14'
+.ST00680 ANOP  ,
+&K       &XX1  &XX2                     RETURN TO CALLER
+         SPACE 1
+         MEXIT ,
+.*
+.* FOLLOWING IS FOR PROC, LIFO OPTIONS
+.*
+.ST00700 AIF   (&STF(2)).ST00800        MAIN OPTION, CONTINUE
+         LR    R1,R13                   SAVE WORK AREA ADDRESS
+         AIF   ('&STAMODE' EQ '').ST00750 CAPPED CODE ?
+         AIF   ('&STACREG' EQ '').ST00720
+         LR    R2,&STACREG              RETRIEVE CAP WORD
+         AGO   .ST00750
+.ST00720 L     R2,&P.CAPWD              RETRIEVE CAP WORD
+.ST00750 ANOP  ,
+         L     R13,4(0,R13)             RESTORE CALLER'S SAVE AREA
+         ST    R15,16(0,R13)            STORE RETURN CODE
+         LR    R0,R1                    PT TO AREA TO FREE
+         L     R1,0(0,R13)              PT TO MODULE COMM AREA
+         L     R15,&P.#FRE-&P.MCA(0,R1) PT TO LIFO FREE ROUTINE
+         BALR  R14,R15                  GO FREE WORK AREA FROM STACK
+.ST00760 AIF   ('&STAMODE' EQ '').ST00780 CAPPED CODE ?
+         AIF   ('&SYSSPLV' NE '1').ST00770
+         L     R1,16                    POINT TO CVT
+         TM    116(R1),128              IS THIS MVS/XA ?
+         BZR   R2                       NO, DO NOT CAP
+.ST00770 BSM   0,R2                     RESUME CALLER'S AMODE
+&K       SETC  '&P.RRR14'
+.ST00780 ANOP  ,
+&K       LM    R14,R12,12(R13)          RESTORE CALLER'S REGISTERS
+         &XX1  &XX2                     RETURN TO CALLER
+         SPACE 1
+         MEXIT ,                        EXIT
+.*
+.* FOLLOWING IS FOR PROC(MAIN) WITH OR WITHOUT LIFO OPTION
+.*
+.ST00800 L     R1,0(0,R13)              R1 HAS MCA ADDRESS
+         L     R1,&P.#O-&P.MCA(0,R1)    PT TO GETMAINED AREA
+         AIF   ('&STAMODE' EQ '').ST00850 CAPPED CODE ?
+         AIF   ('&STACREG' EQ '').ST00820
+         LR    R2,&STACREG              RETRIEVE CAP WORD
+         AGO   .ST00850
+.ST00820 L     R2,&P.CAPWD              RETRIEVE CAP WORD
+.ST00850 ANOP  ,
+         L     R13,4(0,R13)             RESTORE CALLER'S SAVE AREA
+         ST    R15,16(0,R13)            STORE RETURN CODE
+         L     R0,&P.GSIZE              R0 HAS LENGTH OF LIFO STACK
+         MNOTE '         FREEMAIN RU,LV=(0),A=(1),SP=&STSPN'
+         FREEMAIN RU,LV=(0),A=(1),SP=&STSPN
+.ST00860 AIF   ('&STAMODE' EQ '').ST00880 CAPPED CODE ?
+         AIF   ('&SYSSPLV' NE '1').ST00870
+         L     R1,16                    POINT TO CVT
+         TM    116(R1),128              IS THIS MVS/XA ?
+         BZR   R2                       NO, DO NOT CAP
+.ST00870 BSM   0,R2                     RESUME CALLER'S AMODE
+&K       SETC  '&P.RRR14'
+.ST00880 ANOP  ,
+&K       LM    R14,R12,12(R13)          RESTORE CALLER'S REGISTERS
+         &XX1  &XX2                     RETURN TO CALLER
+         SPACE 1
+         AGO   .ST05000                 GO TO LIFO CHECK
+.*
+.* FOLLOWING IS FOR SVC TYPE LINKAGES
+.*
+.ST01000 AIF   ('&R0' EQ '').ST01030   NO R0, CONTINUE
+         AIF   ('&R0' EQ '0' OR '&R0' EQ 'R0').ST01030   0 OR R0
+         AIF   ('&R0' EQ '(0)' OR '&R0' EQ '(R0)').ST01030   0 OR R0
+         AIF   ('&R0'(1,1) EQ '(').ST01010   ANOTHER REGISTER
+         LA    R0,&R0                   R0 HAS RETURN VALUE
+         AGO   .ST01030                 CONTINUE
+.ST01010 LR    R0,&R0(1)                R0 HAS RETURN VALUE
+.*
+.ST01030 AIF   ('&R1' EQ '').ST01050    NO R1, CONTINUE
+         AIF   ('&R1' EQ '1' OR '&R1' EQ 'R1').ST01050   1 OR R1
+         AIF   ('&R1' EQ '(1)' OR '&R1' EQ '(R1)').ST01050   1 OR R1
+         AIF   ('&R1'(1,1) EQ '(').ST01040   ANOTHER REGISTER
+         LA    R1,&R1                   R1 HAS RETURN VALUE
+         AGO   .ST01050                 CONTINUE
+.ST01040 LR    R1,&R1(1)                R1 HAS RETURN VALUE
+.*
+.ST01050 AIF   ('&RC' EQ '').ST01200    NO RETURN CODE SUPPLIED
+         AIF   ('&RC' EQ '(15)' OR  '&RC' EQ '(R15)').ST01400
+         AIF   ('&RC'(1,1) EQ '(').ST01100   RETURN CODE IS A REG
+         LA    R15,&RC                  R15 HAS RETURN CODE
+         AGO   .ST01400                 CONTINUE
+.ST01100 LR    R15,&RC(1)               R15 HAS RETURN CODE
+         AGO   .ST01400                 CONTINUE
+.ST01200 AIF   (NOT &STWA).ST01300      NO WORK AREA, CONTINUE
+         L     R15,&P.RCODE             R15 HAS RETURN CODE
+         AGO   .ST01400                 CONTINUE
+.ST01300 SR    R15,R15                  SET RETURN CODE TO ZERO
+.*
+.ST01400 AIF   (&STF(2) OR &STF(3)).ST01500     MAIN OR LIFO
+         AIF   (&STWA).ST01500          WORK AREA TO FREE
+         &XX1  &XX2                     RETURN TO SVC IH
+         SPACE 1
+         AGO   .ST05000
+.*
+.ST01500 L     R14,0(0,R13)             RELOAD RETURN ADDRESS
+         LR    R4,R15                   SAVE RETURN CODE
+         LR    R2,R0
+         LR    R5,R1
+.ST01520 LR    R1,R13                   WORK AREA ADDR IN REG 1
+         AIF   (&STF(12)).ST01540
+         AIF   ('&STAXKEY' EQ '').ST01530
+.* THE MODESET PRECEDES THE FREEMAIN SO THAT SP 229/230 MAY BE USED
+         MNOTE '         MODESET EXTKEY=&STAXKEY'
+         MODESET EXTKEY=&STAXKEY
+.ST01530 MNOTE '         FREEMAIN &STAGREG,LV=&P.WALEN,A=(1),SP=&STSPN'
+         FREEMAIN &STAGREG,LV=&P.WALEN,A=(1),SP=&STSPN
+.*       AIF   ('&STAXKEY' EQ '').ST01550
+.*       SPKA  0
+         AGO   .ST01550
+.ST01540 LR    R9,R14                   SAVE REG 14
+         MNOTE '         FREEMAIN &STAGREG,LV=&P.WALEN,A=(1),SP=&STSPN,X
+               BRANCH=YES'
+         FREEMAIN &STAGREG,LV=&P.WALEN,A=(1),SP=&STSPN,BRANCH=YES
+         LR    R14,R9                   RESTORE REG 14
+.ST01550 LR    R0,R2                    RELOAD REGS
+         LR    R1,R5
+.ST01560 LR    R15,R4
+         &XX1  &XX2                     RETURN TO SVC IH
+         SPACE 1
+.*
+.* THE FOLLOWING IS FOR PROC(MAIN) AND LIFO OPTIONS
+.*
+.ST05000 AIF   (NOT &STF(3)).MEND       NOT LIFO, ALL FINISHED
+***********************************************************************
+*
+*        LIFO STACK GET/FREE STORAGE ROUTINES
+*
+         PUSH  USING
+         DROP  ,
+         USING &P.MCA,R1                R1 POINTS TO MCA
+#####GET RSECT ,                        LIFO GET ROUTINE
+#####GET AMODE ANY
+#####GET RMODE ANY
+         USING #####GET,R15             R0 CONTAINS LENGTH NEEDED
+         A     R0,&P.F7                 ROUND REQUEST UP TO
+         N     R0,&P.F8                 A DOUBLEWORD BOUNDARY
+         A     R0,&P.#N                 PT TO NEXT FREE LIFO SLOT
+         CL    R0,&P.#E                 IF WE'VE GONE PAST THE END OF
+         BH    &P.GA                    THE STACK, GIVE UP AND ABEND
+         L     R15,&P.#N                PT TO ALLOCATED SLOT
+         ST    R0,&P.#N                 SAVE ADDRESS OF NEXT SLOT
+         LR    R1,R15                   MOVE SLOT POINTER
+         BR    R14                      RETURN TO CALLER, R1 @ SLOT
+*        ABEND 1000,DUMP                STACK TOO SMALL, USE ISA=
+&P.GA    LA    R1,1000                  LOAD ABEND CODE
+         O     R1,&P.X8                 TURN ON DUMP FLAG
+         SVC   13                       ISSUE ABEND SVC
+         SPACE 1
+         ENTRY ####FREE                 LIFO FREE ROUTINE
+         USING ####FREE,R15             R0 CONTAINS ADDRESS
+####FREE CL    R0,&P.#S                 ENSURE THE ADDRESS
+         BL    &P.FA                    TO BE FREE'ED
+         CL    R0,&P.#E                 IS WITHIN THE BOUNDARIES
+         BH    &P.FA                    OF THE CURRENT STACK ELEMENT
+         A     R0,&P.F7                 FORCE AREA TO BE FREE'ED TO
+         N     R0,&P.F8                 DOUBLEWORD BNDRY FOR NEXT GUY
+         ST    R0,&P.#N                 SAVE @ NEXT FREE LIFO SLOT
+         BR    R14                      RETURN TO CALLER
+*        ABEND 1001,DUMP                INVALID AREA ADDRESS
+&P.FA    LA    R1,1001                  LOAD ABEND CODE
+         O     R1,&P.X8                 TURN ON DUMP FLAG
+         SVC   13                       ISSUE ABEND SVC
+         SPACE 1
+         CNOP  0,4                      GET FULLWORD BOUNDARY
+&P.F7    DC    F'7'                     CONSTANTS TO ROUND REQUEST UP
+&P.F8    DC    F'-8'                    TO A DOUBLEWORD BOUNDARY
+&P.X8    DC    X'80000000'              DUMP FLAG FOR ABEND
+         POP   USING                    KILL ADDRESSABILITY
+         SPACE 1
+         AIF   (&STF(11)).MRSECT
+&SYSECT  CSECT ,                        RESUME MAIN PROGRAM CSECT
+         MEXIT ,
+.MRSECT  ANOP  ,
+&SYSECT  RSECT ,                        RESUME MAIN PROGRAM RSECT
+.MEND    MEND  ,

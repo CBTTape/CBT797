@@ -1,0 +1,721 @@
+         MACRO ,
+&NAME    #START ,                       #START MACRO                   X
+               &AMODE=,                 ADDRESSING MODE                X
+               &APARS=5,                RESERVE 5 APAR SLOTS           X
+               &BASE=,                  1 OR MORE BASE REGISTERS       X
+               &BNDRY=,                 WHAT GETMAIN TO LOOK LIKE      X
+               &CAPREG=,                REGISTER TO SAVE CAP WORD      X
+               &COPY=YES,               GENERATE COPYRIGHT             X
+               &COPYYR=,                COPYRIGHT YEAR                 X
+               &CSECT=YES,              GENERATE A CSECT STATEMENT     X
+               &ENUC=,                  EXTENDED NUCLEUS NAME          X
+               &EXTKEY=,                SVC EXECUTION KEY              X
+               &ID=,                    GENERATE ID INFORMATION        X
+               &ISA=,                   INITIAL STACK AREA SIZE        X
+               &LEVEL=,                 MODULE LEVEL (SMP ID)          X
+               &LINK=YES,               LINK USED 'BALR 14,15'         X
+               &LOC=,                   WHERE TO GETMAIN FROM          X
+               &PATCH=,                 PATCH AREA REQUIRED            X
+               &PREFIX=,                PREFIX FOR GENERATED SYMBOLS   X
+               &REG0=,                  REGISTER 0 TO BE SAVED         X
+               &REG1=,                  REGISTER 1 TO BE SAVED         X
+               &RMODE=,                 RESIDENCY MODE                 X
+               &RSECT=NO,               READ-ONLY CONTROL SECTION      X
+               &SAVE=YES,               SAVE REGISTERS (YES/NO)        X
+               &SP=,                    SUBPOOL FOR WORK DSECT         X
+               &SPLEVEL=,               MVS LEVEL (1/2)                X
+               &SVAREA=YES,             SAVE AREA REQUIRED (YES/NO)    X
+               &SVC=,                   ROUTINE IS/IS NOT AN SVC       X
+               &USING=,                 AREAS TO BE MAPPED             X
+               &WKCSECT=,               NAME OF WORK CSECT             X
+               &WKDSECT=                NAME OF WORK DSECT
+.*
+.* DEFINE SYMBOLS NEEDED
+.*
+         GBLA  &STWAC                   COUNTER FOR DEFERED WA DEFINES
+         GBLA  &#COPYSZ
+         GBLB  &STBEG                   START/BEGIN PRESENT
+         GBLB  &STWA                    INDICATES CSECT HAS A WORK AREA
+         GBLB  &STF(16)                 CONTROL FLAG BITS, AS FOLLOWS:
+.*                                       (01) - PROC OPTION CODED
+.*                                       (02) - MAIN OPTION CODED
+.*                                       (03) - LIFO OPTION CODED
+.*                                       (04) - WKCSECT OPTION CODED
+.*                                       (05) - WKDSECT OPTION CODED
+.*                                       (06) - #START HAS BEEN CODED
+.*                                       (07) - ROUTINE IS AN SVC
+.*                                       (08) - WORK FIELDS WANTED
+.*                                       (09) - SVAREA=NO OPTION
+.*                                       (10) - SAVE=YES OPTION
+.*                                       (11) - RSECT=YES OPTION
+.*                                       (12) - SVC=(YES,BRANCH)
+.*                                       (13) - ENUC CAPPING
+.*                                       (14) - PATCH AREA REQUEST
+.*                                       (15) - MODID LABEL GENERATED
+.*
+         GBLC  &#COPYYR
+         GBLC  &STACREG                 CAPWORD SAVE REGISTER
+         GBLC  &STAGREG                 GET/FREEMAIN FORMAT
+         GBLC  &STAMODE                 MODULE'S CAPPED AMODE
+         GBLC  &STAXKEY                 SVC EXECUTION KEY
+         GBLC  &STISASZ                 LIFO ISA SIZE
+         GBLC  &STNAME                  MAIN CSECT NAME
+         GBLC  &STPREF                  PREFIX CHARACTERS
+         GBLC  &STSPN                   SUBPOOL NUMBER
+         GBLC  &STWAD(1000)             WORK AREA DEFERED STACK
+         GBLC  &STWANAM                 WORK AREA NAME
+         GBLC  &SYSSPLV                 SPLEVEL
+         LCLA  &A,&B,&C,&D,&E,&Q        LOCAL
+         LCLB  &F,&G,&H,&I,&J,&QQ,&R2,&R3,&RRREGS WORK
+         LCLC  &K,&L,&M,&N,&O,&P,&W     SYMBOLS
+.*
+.* INITIALIZE SYMBOLS, SET UP PREFIX, PICK UP ALL OPERANDS
+.*
+&STAXKEY SETC  '&EXTKEY'
+         SPLEVEL TEST                   GET ORIGINAL SPLEVEL
+&STAGREG SETC  'RU'                     SVC-78
+         AIF   ('&LOC' EQ '').ST00000
+&W       SETC  ',LOC=&LOC'
+.ST00000 ANOP  ,
+.*
+&STWAC   SETA  1                        INITIALIZE WORK FIELD STACK
+&STBEG   SETB  1                        START/BEGIN PRESENT
+&STWA    SETB  0                        CLEAR ALL GLOBAL SYMBOLS
+&STF(1)  SETB  0
+&STF(2)  SETB  0
+&STF(3)  SETB  0
+&STF(4)  SETB  0
+&STF(5)  SETB  0
+&STF(6)  SETB  1                        FLAG TO SAY  #START
+&STF(7)  SETB  0
+&STF(9)  SETB  0
+&STF(10) SETB  0
+&STF(11) SETB  0
+&STF(13) SETB  0
+&STF(14) SETB  ('&PATCH' EQ 'YES' OR '&PATCH' EQ 'Y')
+&STF(14) SETB  (&STF(14) OR ('&PATCH' EQ '' AND '&WKDSECT' NE ''))
+&#COPYYR SETC  ''                       PASS YEAR TO #COPY
+         AIF   ('&COPYYR' EQ '').NOYEAR
+&#COPYYR SETC  '&COPYYR'                PASS YEAR TO #COPY
+.NOYEAR  ANOP  ,
+&STWANAM SETC  ''
+&STAMODE SETC  ''
+&STACREG SETC  '&CAPREG'
+&QQ      SETB  ('&COPY' NE 'NO')        COPYRIGHT SWITCH
+         #COPY SET                      SET COPYRIGHT LENGTH
+.*
+.*
+         AIF   ('&NAME' EQ '').ST09010  ERROR - MISSING CSECT NAME
+         AIF   ('&CSECT'(1,1) EQ 'N').ST00020
+&STNAME  SETC  '&NAME'                  SAVE MAIN CSECT NAME
+.ST00020 ANOP  ,
+.*
+         AIF   ('&ENUC' EQ '' OR '&SYSSPLV' NE '2').ST00030
+&STNAME  SETC  '&ENUC'                  SAVE MAIN CSECT NAME
+.ST00030 AIF   ('&WKDSECT&WKCSECT' EQ '').ST00040
+         AIF   ('&SAVE' NE 'YES').ST09040
+         AIF   ('&SVAREA' NE 'YES').ST09050
+.ST00040 ANOP  ,
+.*
+&K       SETC  '&STNAME.XXX'(1,3)
+         AIF   ('&CSECT'(1,1) EQ 'Y').ST00045
+&K       SETC  '&NAME.XXX'(1,3)
+         AIF   ('&WKDSECT&WKCSECT' EQ '').ST00045
+&K       SETC  '&WKDSECT&WKCSECT.XXX'(1,3)
+.ST00045 ANOP  ,
+&STF(12) SETB  ('&SVC' EQ '(YES,BRANCH)')
+&G       SETB  ('&SVC' EQ 'YES' OR '&SVC' EQ '(YES)' OR &STF(12))
+         AIF   ('&SVC' NE '').ST00050
+&F       SETB  ('&K' EQ 'IGC' OR '&K' EQ 'IGG' OR '&K' EQ 'IGX')
+.ST00050 ANOP  ,
+&STF(7)  SETB  (&F OR &G)               SET SVC SWITCH
+.*
+         AIF   (NOT &STF(7)).ST00090
+         AIF   ('&WKCSECT' EQ '').ST00070
+         IHBERMAC 1020,WKCSECT,SVC
+&J       SETB  1
+.ST00070 AIF   ('&BASE' EQ '').ST00080
+         IHBERMAC 1020,BASE,SVC
+&J       SETB  1
+.ST00080 AIF   (&J).MEND
+.*
+.ST00090 AIF   ('&PREFIX' EQ '').ST00200   NO PREFIX, CONTINUE
+         AIF   (K'&PREFIX GT 3).ST00100    PREFIX NEEDS TO BE CUT
+&STPREF  SETC  '&PREFIX'                ESTABLISH PREFIX
+         AGO   .ST00300                 CONTINUE
+.ST00100 ANOP  ,
+&STPREF  SETC  '&PREFIX'(1,3)           TRUNCATE PREFIX
+         AGO   .ST00300                 CONTINUE
+.ST00200 ANOP  ,
+&STPREF  SETC  '&K'                     SET PREFIX TO CSECT 3 CHAR
+.ST00300 ANOP  ,
+&P       SETC  '&STPREF'                MAKE PREFIX EASIER TO WORK WITH
+.*
+&STSPN   SETC  '253'                    SET DEFAULT SUBPOOL FOR SVC
+         AIF   (&STF(7)).ST00330        USE SUBPOOL 253 FOR SVC
+&STSPN   SETC  '1'                      SET DEFAULT SUBPOOL TO 1
+.ST00330 AIF   ('&SP' EQ '').ST00350    NO SUBPOOL CODED, CONTINUE
+&STSPN   SETC  '&SP'                    PICK UP SUBPOOL
+.ST00350 ANOP  ,
+.*
+&A       SETA  N'&SYSLIST               PICK UP NUMBER OF PARAMETERS
+&B       SETA  0                        INDEX OF PARAMETER
+.ST00400 ANOP  ,
+&B       SETA  &B+1                     POINT TO NEXT PARAMETER
+         AIF   (&B GT &A).ST00700       GOT ALL POSITIONAL PARAMETERS
+&K       SETC  '&SYSLIST(&B)'           PICK UP PARMATER
+         AIF   ('&K' NE 'PROC').ST00500 NOT PROC PARAMETER, CONT
+&STF(1)  SETB  1                        INDICATE PROC PARAMETER
+         AGO   .ST00400                 CONTINUE WITH NEXT PARAMETER
+.ST00500 AIF   ('&K' NE 'PROC(MAIN)').ST00600   NOT MAIN PARM, CONT
+&STF(1)  SETB  1                        INDICATE PROC PARAMETER
+&STF(2)  SETB  1                        INDICATE MAIN PARAMETER
+         AGO   .ST00400                 CONTINUE WITH NEXT PARAMETER
+.ST00600 AIF   ('&K' NE 'LIFO').ST00400 NOT LIFO PARM, CONTINUE
+&STF(3)  SETB  1                        INDICATE LIFO PARAMETER
+         AGO   .ST00400                 CONTINUE  WITH NEXT PARAMETER
+.ST00700 AIF   ('&WKDSECT' EQ '').ST00800   NO WORK DSECT, CONTINUE
+&STF(5)  SETB  1                        INDICATE WORK AREA IS A DSECT
+&STWA    SETB  1                        INDICATE WORK AREA IS PRESENT
+&STWANAM SETC  '&WKDSECT'               SAVE WORK AREA NAME
+.ST00800 AIF   ('&WKCSECT' EQ '').ST00900   NO WORK CSECT, CONTINUE
+         AIF   (&STF(1)).ST09030        ERROR - PROC
+         AIF   (&STF(5)).ST09020        ERROR - WKDSECT
+&STF(4)  SETB  1                        INDICATE WORK AREA IS A CSECT
+&STWA    SETB  1                        INDICATE WORK AREA IS PRESENT
+&STWANAM SETC  '&WKCSECT'               SAVE WORK AREA NAME
+.*
+         AIF   ('&SP' EQ '').ST00900    NO SUBPOOL PARAMETER, CONTINUE
+         IHBERMAC 1016,SP,WKCSECT
+.*
+.ST00900 AIF   ('&ISA' EQ '').ST00910   NO ISA PARM, CONTINUE
+         AIF   (&STF(2) AND &STF(3)).ST00910   PROC(MAIN) AND LIFO?
+         MNOTE 4,'ST1001I - ISA Ignored Without PROC(MAIN) And LIFO'
+.ST00910 AIF   (NOT &STF(1)).ST01000    NOT PROC OPTION, CONTINUE
+         AIF   (&STF(5)).ST01000        WKDSECT OPTION, CONTINUE
+&STWANAM SETC  '&P.WA'                  GENERATE WORK AREA NAME
+&STWA    SETB  1                        INDICATE A WORK AREA PRESENT
+&STF(5)  SETB  1                        INDICATE WKDSECT OPTION
+.*
+.* NOW START WITH PRELIMINARIES, ETC
+.*
+.ST01000 AIF   ('&SPLEVEL' EQ '').ST01010
+         AIF   ('&SPLEVEL' EQ '&SYSSPLV').ST01010
+         SPLEVEL SET=&SPLEVEL
+.*
+.ST01010 AIF   ('&RSECT'(1,1) EQ 'Y').ST01020
+         AIF   ('&CSECT'(1,1) EQ 'N').ST01015
+&STNAME  CSECT ,                        #START MACRO
+         AGO   .ST01030
+.ST01015 ANOP  ,
+&NAME    DS    0D                       #START MACRO
+         ENTRY &NAME
+         AGO   .ST01030
+.ST01020 ANOP  ,
+&STNAME  RSECT ,                        #START MACRO
+&STF(11) SETB  1
+.*
+.ST01030 AIF   ('&ENUC' EQ '').ST01050
+         AIF   ('&AMODE' EQ '').ST01032
+         IHBERMAC 1016,AMODE,ENUC
+.ST01032 AIF   ('&RMODE' EQ '').ST01034
+         IHBERMAC 1016,RMODE,ENUC
+.ST01034 ANOP  ,
+&STNAME  AMODE 31
+&STNAME  RMODE ANY
+         AIF   ('&SYSSPLV' NE '2').ST01070
+&STF(13) SETB  1                        FLAG FOR BSM RETURN
+         SPACE 1
+&NAME    RSECT ,                        FRONT-END MODULE FOR CODE
+&NAME    AMODE ANY                      TO RESIDE IN EXTENDED NUCLEUS
+&NAME    RMODE 24                       WHICH IS BRANCH-ENTERABLE
+         L     R15,8(0,R15)             LOAD ADDRESS OF REAL MODULE
+         BSM   R14,R15                  BRANCH AND HANDLE AMODE
+         DC    H'0'
+         DC    A(&STNAME+X'80000000')   ADDRESS OF REAL MODULE
+         SPACE 1
+         AIF   (&STF(11)).ST01036
+&STNAME  CSECT ,                        RESUME MAIN CSECT
+         AGO   .ST01070
+.ST01036 ANOP  ,
+&STNAME  RSECT ,                        RESUME MAIN RSECT
+         AGO   .ST01070
+.ST01050 AIF   ('&AMODE' EQ '').ST01060
+         AIF   ('&AMODE' EQ 'CAP24' OR '&AMODE' EQ 'CAP31').ST01055
+&STNAME  AMODE &AMODE
+         AGO   .ST01060
+.ST01055 ANOP  ,
+&STAMODE SETC  '&AMODE'(4,2)            SAVE CAPPED AMODE
+&STNAME  AMODE ANY
+         AIF   ('&RMODE' NE '').ST01065
+&STNAME  RMODE 24
+         AGO   .ST01070
+.ST01060 AIF   ('&RMODE' EQ '').ST01070
+.ST01065 ANOP  ,
+&STNAME  RMODE &RMODE
+.ST01070 SPACE 1
+         #REGS ,
+         AIF   (&STF(7)).ST04000        GO TO SVC SECTION
+.*
+         SPACE 1
+         AIF   ('&ID' EQ 'YES').ST01080
+         AIF   ('&ID' EQ 'NO').ST01150
+         AIF   ('&CSECT'(1,1) NE 'N').ST01080
+         B     14(0,R15)                SKIP SUB-ROUTINE NAME
+         DC    AL1(8)                   LENGTH OF SUB-ROUTINE NAME
+         DC    CL8'&NAME'               SUB-ROUTINE NAME
+*
+         AGO   .ST01150
+.ST01080 ANOP  ,
+&Q       SETA  30+&#COPYSZ*&QQ
+         AIF   ('&LEVEL' EQ '').ST01100
+&Q       SETA  &Q+8                     ALLOW FOR LEVEL
+.ST01100 AIF   ('&APARS' EQ '').ST01130
+&Q       SETA  &Q+(&APARS*4)            ALLOW FOR APARS
+.ST01130 B     &Q.(0,R15)               BRANCH AROUND PROGRAM ID
+*
+&Q       SETA  &Q-5-&#COPYSZ*&QQ
+         DC    AL1(&Q)                  LENGTH OF PROGRAM ID
+         AIF   (&STF(15)).ST01132       BIF LABEL GENERATED
+&P.MODID DC    CL8'&NAME '              MODULE NAME
+&STF(15) SETB  1                        SET LABEL GENERATED
+         AGO   .ST01135                 GEN REST OF MODID
+.ST01132 ANOP  ,                        MODULE NAME/NO LABEL
+         DC    CL8'&NAME '              MODULE NAME
+.ST01135 ANOP  ,
+         DC    CL8' &SYSTIME '          TIME OF ASSEMBLY
+         DC    CL9'&SYSDATC'            DATE OF ASSEMBLY
+         AIF   ('&LEVEL' EQ '').ST01137
+         DC    CL8'&LEVEL'              MODULE LEVEL
+.*
+.ST01137 AIF   ('&APARS' EQ '').ST01140
+         DC    &APARS.CL4' '            APAR SLOTS
+.*
+.ST01140 AIF   ('&COPY' EQ 'NO').ST01150
+         #COPY GEN                      COPYRIGHT NOTICE
+*
+.ST01150 AIF   ('&SAVE' NE 'YES').ST01160
+         STM   R14,R12,12(R13)          SAVE CALLER'S REGISTERS
+&STF(10) SETB  1
+.*
+.ST01160 AIF   ('&BASE' NE '').ST01200   BASE SPECIFIED, CONTINUE
+.*
+         AIF   (&STF(1) OR &STF(3) OR &STF(4) OR &STF(5)).ST01180
+         AGO   .ST01300                 BASE WILL BE R13 (LATER)
+.ST01180 ANOP  ,                        DEFAULT BASE IS R12
+         AIF   ('&LINK' EQ 'NO').ST01190 'BALR 14,15'?
+         LA    R12,0(0,R15)             LOAD BASE REGISTER WITH EPA
+         USING &NAME,R12
+         AGO   .ST01300                 CONTINUE
+.ST01190 ANOP  ,
+         BALR  R12,0                    GET
+&P.BASE  DS    0H                       . BASE
+         USING &P.BASE,R12              . REGISTER
+         AGO   .ST01300                 CONTINUE
+.*
+.ST01200 ANOP  ,
+         AIF   ('&LINK' EQ 'NO').ST01202 'BALR 14,15'?
+         LA    &BASE(1),0(0,R15)        LOAD BASE REGISTER WITH EPA
+         AIF   ('&BASE'(1,1) EQ '(').ST01205
+         USING &NAME,&BASE
+         AGO   .ST01204                 CONTINUE
+.ST01202 ANOP  ,
+         BALR  &BASE(1),0               GET
+&P.BASE  DS    0H                       . BASE
+         AIF   ('&BASE'(1,1) EQ '(').ST01205
+         USING &P.BASE,&BASE            . REGISTER
+.ST01204 ANOP  ,
+&R2      SETB  (&R2 OR '&BASE' EQ '2' OR '&BASE' EQ 'R2')
+&R3      SETB  (&R3 OR '&BASE' EQ '3' OR '&BASE' EQ 'R3')
+         AGO   .ST01300                 ONLY ONE BASE REG
+.ST01205 ANOP  ,
+&K       SETC  '&BASE'(2,K'&BASE-2)     REMOVE PARENS
+         AIF   ('&LINK' EQ 'NO').ST01207 'BALR 14,15'?
+         USING &NAME,&K
+         AGO   .ST01209                 CONTINUE
+.ST01207 ANOP  ,
+         USING &P.BASE,&K
+.ST01209 ANOP  ,
+&A       SETA  1
+.ST01210 ANOP  ,
+&R2      SETB  (&R2 OR '&BASE(&A)' EQ '2' OR '&BASE(&A)' EQ 'R2')
+&R3      SETB  (&R3 OR '&BASE(&A)' EQ '3' OR '&BASE(&A)' EQ 'R3')
+&A       SETA  &A+1
+         AIF   ('&BASE(&A)' EQ '').ST01300   NO MORE, CONTINUE
+         LA    &BASE(&A),2048(0,&BASE(&A-1))
+         LA    &BASE(&A),2048(0,&BASE(&A))
+         AGO   .ST01210
+.*
+.ST01300 AIF   (&STF(1) OR &STF(3) OR &STF(4) OR &STF(5)).ST01600
+         AIF   ('&SVAREA' NE 'YES').ST01400
+.*
+.* FOLLOWING IS FOR NO FRILLS INLINE SAVE AREA
+.*
+         LR    R14,R13                  SAVE CALLERS SAVE AREA ADDRESS
+         CNOP  0,4
+         LA    R13,*+8-&NAME.(0,R15)    POINT TO SAVE AREA
+         B     72(0,R13)                BR AROUND SAVE AREA
+         AIF   ('&BASE' NE '').ST01320
+         USING *,R13                    ADDRESSABILITY
+.ST01320 ANOP  ,
+&K       SETC  ''
+         AIF   ('&STAMODE' EQ '').ST01330
+&K       SETC  '&P.CAPWD'
+.ST01330 ANOP  ,
+&K       DC    18F'0'                   SAVE AREA
+         ST    R14,4(0,R13)             CHAIN SAVE
+         ST    R13,8(0,R14)             AREAS TOGETHER
+         AGO   .ST02500                 CONTINUE
+.*
+.* FOLLOWING IS FOR SVAREA=NO OPTION
+.*
+.ST01400 ANOP  ,
+&STF(9)  SETB  1                        REMEMBER FOR #STOP
+         AIF   ('&BASE' NE '').ST02500
+         USING &NAME,R15                ADDRESSABILITY
+         AGO   .ST02500                 CONTINUE
+.*
+.* FOLLOWING IS FOR WKCSECT OPTION
+.*
+.ST01600 AIF   (&STF(1) OR &STF(5)).ST01700   PROC OR WKDSECT, CONT
+         LR    R15,R13                  SAVE CALLER'S SAVE AREA ADRRESS
+         L     R13,=A(&WKCSECT)         AND PICK UP ADDRESS OF NEW ONE
+         USING &WKCSECT,R13             ESTABLISH ADDRESSABILITY TO IT
+         ST    R15,4(0,R13)             CHAIN SAVE
+         ST    R13,8(0,R15)             AREAS TOGETHER
+         XC    &P.RCODE,&P.RCODE        CLEAR RETURN CODE FIELD
+         AGO   .ST02500                 CONTINUE
+.*
+.* FOLLOWING IS FOR WKDSECT OPTION WHEN NO PROC(MAIN) OR PROC OPTIONS
+.*
+.ST01700 AIF   (&STF(1) OR &STF(2)).ST01800   PROC OR MAIN, CONTINUE
+&RRREGS  SETB  1                        REGS WILL BE ALTERED
+         MNOTE '         GETMAIN &STAGREG,LV=&P.WALEN&W,SP=&STSPN'
+         GETMAIN &STAGREG,LV=&P.WALEN,LOC=&LOC,SP=&STSPN,BNDRY=&BNDRY
+         L     R3,=A(&P.WALEN)          R3 HAS LENGTH OF WORK AREA
+         LR    R2,R1                    R2 POINTS TO WORK AREA
+         SR    R15,R15                  R15 HAS PAD BYTE & ZERO LENGTH
+         MVCL  R2,R14                   CLEAR WORK AREA
+         ST    R13,4(0,R1)              CHAIN SAVE AREAS
+         ST    R1,8(0,R13)              TOGETHER
+         LR    R13,R1                   PT TO WORK AREA AND SAVE AREA
+         USING &WKDSECT,R13             ESTABLISH ADDRESSABILITY TO IT
+         AGO   .ST02500                 CONTINUE
+.*
+.* FOLLOWING IS FOR PROC OPTION WITHOUT MAIN OR LIFO OPTION
+.*
+.ST01800 ANOP  SET                      WORK AREA NAME
+&N       SETC  '&STWANAM'               PICK UP WORK AREA NAME
+.ST01900 AIF   (&STF(2) OR &STF(3)).ST02000   MAIN OR LIFO, CONTINUE
+         L     R15,0(0,R13)             PT TO COMMUNICATIONS AREA
+         L     R15,&P.#O-&P.MCA(0,R15)  PT TO EXTERNAL DUMMY SECTION
+         A     R15,&P.QCON              GET OFFSET TO WORK AREA
+         ST    R15,8(0,R13)             CHAIN SAVE AREAS
+         ST    R13,4(0,R15)             AREAS TOGETHER
+         MVC   0(4,R15),0(R13)          COPY POINTER TO COMM AREA
+         LR    R13,R15                  PT TO WORK AREA AND SAVE AREA
+         USING &N,R13                   ESTABLISH ADDRESSABILITY TO IT
+         XC    &P.RCODE,&P.RCODE        CLEAR RETURN CODE FIELD
+         AGO   .ST02500                 CONTINUE
+.*
+.* FOLLOWING IS FOR PROC(MAIN) OPTION, WHEN NO LIFO OPTION
+.*
+.ST02000 AIF   (&STF(3)).ST02100        LIFO OPTION, CONTINUE
+&RRREGS  SETB  1                        REGS WILL BE ALTERED
+         AIF   (&R2).ST09060            REGISTER 2 NOT SUPPORTED BASE
+         AIF   (&R3).ST09070            REGISTER 3 NOT SUPPORTED BASE
+         L     R3,&P.GSIZE              R0 HAS LENGTH OF WORK AREA CXD
+         MNOTE '         GETMAIN RU,LV=(R3)&W,SP=&STSPN,BNDRY=PAGE'
+         GETMAIN RU,LV=(R3),LOC=&LOC,SP=&STSPN,BNDRY=PAGE
+         LR    R2,R1                    R2 POINTS TO WORK AREA
+         SR    R15,R15                  R15 HAS PAD BYTE & ZERO LENGTH
+         MVCL  R2,R14                   CLEAR WORK AREA
+         LR    R15,R13                  SAVE CALLER'S SAVE AREA ADDRESS
+         LR    R13,R1                   PT TO EXTERNAL DUMMY SECTION @
+         A     R13,&P.QCON              PT TO WORK AREA
+         ST    R13,8(0,R15)             CHAIN SAVE AREAS
+         ST    R15,4(0,R13)             TOGETHER
+         USING &N,R13                   ESTABLISH ADDRESSABILITY TO IT
+         XC    &P.RCODE,&P.RCODE        CLEAR RETURN CODE FIELD
+         ST    R1,&P.#O                 STORE DUMMY SECTION @ IN MCA
+         LA    R15,&P.MCA               PT TO MCA
+         ST    R15,0(0,R13)             STORE IT IN WORD 1 OF SAVE AREA
+         AGO   .ST02500                 CONTINUE
+.*
+.* FOLLOWING IS FOR PROC AND LIFO OPTIONS, WITHOUT MAIN OPTION
+.*
+.ST02100 AIF   (&STF(2)).ST02200        MAIN OPTION, CONTINUE
+&RRREGS  SETB  1                        REGS WILL BE ALTERED
+         L     R3,=A(&P.WALEN)          R3 HAS LENGTH OF WORK AREA
+         LR    R0,R3                    R0 TOO
+         L     R1,0(0,R13)              PT TO MCA
+         L     R15,&P.#GET-&P.MCA(0,R1) PT TO LIFO GET ROUTINE
+         BALR  R14,R15                  GET WORK AREA FROM LIFO STACK
+         LR    R2,R1                    R2 POINTS TO WORK AREA
+         SR    R15,R15                  R15 HAS PAD BYTE & ZERO LENGTH
+         MVCL  R2,R14                   CLEAR WORK AREA
+.*       LM    R2,R3,28(R13)            RESTORE REGS 2 AND 3
+         ST    R1,8(0,R13)              CHAIN SAVE AREAS
+         ST    R13,4(0,R1)              TOGETHER
+         MVC   0(4,R1),0(R13)           PROPOGATE MCA ADDRESS
+         LR    R13,R1                   PT TO WORK AREA
+         USING &N,R13                   ESTABLISH ADDRESSABILITY TO IT
+         AGO   .ST02500                 CONTINUE
+.*
+.* AND NOW FOR THE FINALE, THIS IS FOR PROC, MAIN, AND LIFO OPTIONS
+.*
+.ST02200 ANOP  ,                        FIRST TAKE CARE OF ISA PARM
+&RRREGS  SETB  1                        REGS WILL BE ALTERED
+&STISASZ SETC  '16*1024'                SET DEFAULT ISA SIZE
+         AIF   ('&ISA' EQ '').ST02400   NO ISA PARAMETER, CONTINUE
+         AIF   ('&ISA'(K'&ISA,1) EQ 'K').ST02300   ISA SIZE IS IN K
+&STISASZ SETC  '&ISA'                   PICK UP ISA SIZE
+         AGO   .ST02400                 CONTINUE
+.ST02300 ANOP  ,
+&STISASZ SETC  '&ISA'(1,K'&ISA-1)'*1024' CONVERT K TO 1024 BYTES
+.ST02400 ANOP  ,
+         AIF   (&R2).ST09060            R2 USED ? YES, BAD BASE
+         AIF   (&R3).ST09070            R3 USED ? YES, BAD BASE
+         L     R3,&P.GSIZE              R3 HAS LENGTH OF WORK AREA
+         MNOTE '         GETMAIN RU,LV=(R3)&W,SP=&STSPN,BNDRY=PAGE'
+         GETMAIN RU,LV=(R3),LOC=&LOC,SP=&STSPN,BNDRY=PAGE
+         LR    R2,R1                    R2 POINTS TO WORK AREA
+         SR    R15,R15                  R15 HAS PAD BYTE & ZERO LENGTH
+         MVCL  R2,R14                   CLEAR WORK AREA
+         ST    R1,8(0,R13)              CHAIN SAVE AREAS
+         ST    R13,4(0,R1)              TOGETHER
+         LR    R13,R1                   LOAD WORK AREA ADDRESS
+         USING &N,R13                   ESTABLISH ADDRESSABILITY TO IT
+*
+* INITIALIZE MODULE COMMUNICATIONS AREA WITH POINTERS TO LIFO STACK
+* AND LIFO GET/FREE ROUTINES
+*
+         ST    R1,&P.#O                 STORE DYNAMIC STORAGE ADDRESS
+         A     R1,=A(&P.WALEN)          DETERMINE STACK ORIGIN
+         ST    R1,&P.#S                 STACK ORIGIN POINTER
+         ST    R1,&P.#N                 CURRENT STACK POINTER
+         LA    R15,&P.MCA               PT TO MCA
+         ST    R15,0(0,R13)             STORE IN WORD 1 OF SAVE AREA
+         L     R14,&P.GSIZE             LOAD SIZE OF INITIAL STACK AREA
+         AR    R14,R13                  COMPUTE STACK END ADDRESS
+         ST    R14,&P.#E                STORE IT INTO MCA
+         MVC   &P.#GET(8),=V(#####GET,####FREE)
+.*
+.* RESTORE REGISTERS WHICH HAVE BEEN CORRUPTED
+.*
+.ST02500 AIF   ('&SAVE' NE 'YES').ST06000 SKIP IF SAVE=NO SPECIFIED
+         AIF   ('&SVAREA' NE 'YES').ST06000
+         AIF   (NOT &RRREGS).ST06000
+         L     R1,4(0,R13)              PT TO CALLER'S SAVE AREA
+         LM    R14,R3,12(R1)            RESTORE REGISTERS
+.*
+.* RESYNCH BASE REGISTERS R2 OR R3 NEEDED ?
+.*
+         AIF   (NOT (&R2 OR &R3)).ST06000
+.*
+         LA    &BASE(1),0(,R15)         SET BASE REGISTER AGAIN
+&A       SETA  2
+.ST02530 AIF   ('&BASE(&A)' EQ '').ST06000   NO MORE, CONTINUE
+         LA    &BASE(&A),2048(0,&BASE(&A-1))
+         LA    &BASE(&A),2048(0,&BASE(&A))
+&A       SETA  &A+1
+         AGO   .ST02530
+.*
+.*       SVC LINKAGE IS GENERATED HERE
+.*
+.ST04000 EJECT ,
+***********************************************************************
+*                                                                     *
+         AIF   (&G).ST04002
+*        THE 'SVC' OPTION OF #START HAS BEEN DEFAULTED TO             *
+*        FOR THIS CSECT NAME.  (CODE 'SVC=NO' TO SUPPRESS IT).        *
+         AGO   .ST04003
+.ST04002 ANOP  ,
+*        THE 'SVC' OPTION OF #START HAS BEEN SELECTED                 *
+.ST04003 ANOP  ,
+*                                                                     *
+***********************************************************************
+*                                                                     *
+*    THE PROLOG AND EPILOG CODE WILL BE GENERATED ACCORDING TO MVS    *
+*    SVC LINKAGE STANDARDS.  WHEN THE SVC GETS CONTROL THE            *
+*    REGISTERS ARE PRE-SET IN A DIFFERENT FASHION THAN FOR NORMAL     *
+*    LINKAGE.  REGS 6 AND 15 DIFFER DEPENDING ON TYPE OF ENTRY:       *
+*    CASE (A) IS FOR TYPES 1,2,3,6, AND THE FIRST LOAD OF A TYPE      *
+*    4.  CASE (B) REFERS TO THE SUBSEQUENT LOADS OF A TYPE-4 SVC      *
+*    (ENTERED VIA XCTL).                                              *
+*                                                                     *
+*          0,1   SAME INFO AS WHEN THE SVC WAS ISSUED                 *
+*          2     UNPREDICTABLE                                        *
+*          3     ADDRESS OF THE CVT                                   *
+*          4     ADDRESS OF THE CURRENT TCB                           *
+*          5     ADDRESS OF THE CURRENT REQUEST BLOCK (RB)            *
+*          6     (A) - ENTRY POINT ADDRESS OF THE SVC ROUTINE         *
+*                (B) - UNPREDICTABLE                                  *
+*          7     ADDRESS OF THE CURRENT ASCB                          *
+*          8-12  UNPREDICTABLE                                        *
+*          13    SAME INFO AS WHEN THE SVC WAS ISSUED (SEE BELOW)     *
+*          14    RETURN ADDRESS                                       *
+*          15    (A) - SAME INFO AS WHEN THE SVC WAS ISSUED           *
+*                (B) - ENTRY POINT ADDRESS OF THE SVC ROUTINE         *
+*                                                                     *
+*   **NOTE**  REGISTER 13 MAY OR MAY NOT POINT TO A SAVE AREA.  IN    *
+*             ANY CASE, SVC ROUTINES MUST NEVER ATTEMPT TO SAVE       *
+*             REGISTERS THERE BECAUSE (1) THE SAVE AREA MAY BE IN     *
+*             USE ALREADY AND (2) THE SVC RUNS IN KEY ZERO AND        *
+*             COULD OVERLAY DATA.  THE SYSTEM HAS SAVED ALL THE       *
+*             CALLERS REGISTERS FOR YOU, AND WILL RESTORE ALL         *
+*             EXCEPT R0, R1, AND R15.                                 *
+*                                                                     *
+*    WHEN THE PROLOG IS COMPLETE, ALL THE REGISTERS WILL BE LOADED    *
+*    AS DESCRIBED ABOVE, EXCEPT FOR REGISTERS 12 AND 13.              *
+*    REGISTER 12 WILL BE SET UP AS THE BASE REGISTER FOR THE MODULE.  *
+         AIF   (NOT &STWA).ST04010
+*    REGISTER 13 WILL POINT TO THE GETMAINED SAVE/WORK AREA.          *
+         AGO   .ST04020
+.ST04010 ANOP  ,
+*    REGISTER 13 WILL BE SET TO ZEROS.                                *
+.ST04020 ANOP  ,
+         AIF   (NOT &STWA).ST04030
+         AIF   (K'&NAME GT 6 OR &STF(12)).ST04030
+*                                                                     *
+*   THE CODE GENERATED HERE USES SVC-TYPE GETMAIN/FREEMAIN MACROS.    *
+*   IT CANNOT BE USED WITH SVC TYPES 1 AND 6 BECAUSE THEY CANNOT      *
+*   ISSUE ANY SVCS.  TYPE 1 MAY USE BRANCH-ENTRY SERVICES.            *
+.ST04030 AIF   (NOT &STF(12)).ST04040
+*                                                                     *
+*   THE CODE GENERATED HERE USES BRANCH ENTRY GETMAIN AND FREEMAIN    *
+*   MACROS.  THIS SVC MUST BE TYPE 1, OR REQUEST THE LOCAL LOCK VIA   *
+*   THE SVCTABLE.                                                     *
+.ST04040 ANOP  ,
+*                                                                     *
+***********************************************************************
+         EJECT ,
+.*
+         BALR  R12,0                    SET UP SVC BASE REGISTER
+         USING *,R12
+         LA    R12,0(0,R12)             ENSURE BASE REG CLEAN
+.*
+         AGO   .ST04050
+         USING CVTMAP,R3
+         USING TCB,R4
+         USING RBBASIC,R5
+         USING ASCB,R7
+         #DSECTS CVT,TCB,RB,ASCB,TYPE=DEFER MAP 'EM LATER, PLEASE
+.*
+.ST04050 AIF   ('&ID' EQ 'NO').ST04100
+         SPACE 1
+&Q       SETA  28+&#COPYSZ*&QQ
+         AIF   ('&LEVEL' EQ '').ST04054
+&Q       SETA  &Q+8                     ALLOW FOR LEVEL
+.ST04054 AIF   ('&APARS' EQ '').ST04060
+&Q       SETA  &Q+(&APARS*4)            ALLOW FOR APARS
+.ST04060 B     *+&Q                     BRANCH AROUND ID
+         DC    CL9'&NAME '              MODULE NAME
+         DC    CL6'&SYSTIME '           TIME OF ASSEMBLY
+         DC    CL9'&SYSDATC '           DATE OF ASSEMBLY
+         AIF   ('&LEVEL' EQ '').ST04064
+         DC    CL8'&LEVEL'              MODULE LEVEL
+.ST04064 AIF   ('&APARS' EQ '').ST04070
+         DC    &APARS.CL4' '            APAR SLOTS
+.ST04070 AIF   ('&COPY' EQ 'NO').ST04100
+         #COPY GEN                      36-BYTE COPYRIGHT
+         SPACE 1
+.*
+.ST04100 AIF   ('&STAXKEY' EQ '').ST04200
+.* THE MODESET PRECEDES THE GETMAIN SO THAT SP 229/230 MAY BE USED
+         MNOTE '         MODESET EXTKEY=&STAXKEY'
+         MODESET EXTKEY=&STAXKEY
+.ST04200 AIF   (&STWA).ST04700
+.* REG 13 IS ZEROED.  IT MIGHT OTHERWISE BE USED AS A SAVE AREA
+.* POINTER LEADING TO VERY SUBTLE INTEGRITY PROBLEMS.  CLEARING IT
+.* ENSURES THAT AN 0C4 ABEND WILL OCCUR IF AN ATTEMPT IS MADE TO
+.* SAVE VIA R13  (EVEN IN KEY ZERO).
+         SR    R13,R13                  TAKE OUT INSURANCE
+         AGO   .ST06000                 NO FRILLS ENTRY STYLE
+.*
+.ST04700 AIF   (&STF(1) OR &STF(2)).ST04800
+         LR    R2,R15                   SAVE REGS
+         LR    R10,R0
+         LR    R11,R1
+         AIF   (&STF(12)).ST04730
+         MNOTE '         GETMAIN &STAGREG,LV=&P.WALEN&W,SP=&STSPN'
+         GETMAIN &STAGREG,LV=&P.WALEN,LOC=&LOC,SP=&STSPN
+         AGO   .ST04750
+.ST04730 LR    R9,R14                   SAVE REG 14
+         MNOTE '         GETMAIN &STAGREG,LV=&P.WALEN&W,SP=&STSPN,BRANCX
+               H=YES'
+         GETMAIN &STAGREG,LV=&P.WALEN,LOC=&LOC,SP=&STSPN,BRANCH=YES
+         LR    R14,R9                   RESTORE REG 14
+         L     R3,16                    RESTORE CVT POINTER
+.ST04750 LR    R13,R1                   R13 POINTS TO WORK AREA
+         USING &WKDSECT,R13             ADDRESSABILITY
+         LR    R0,R1
+         L     R1,=A(&P.WALEN)
+         SR    R9,R9
+         MVCL  R0,R8                    CLEAR THE WORK AREA
+         LR    R0,R10                   RELOAD REGS
+         LR    R1,R11
+         LR    R15,R2
+         ST    R14,0(0,R13)             STASH RETURN ADDRESS
+         AGO   .ST06000
+.*
+.ST04800 MNOTE 12,'ST1002I - Option Not Yet Coded'
+         MEXIT ,
+.*
+.* FINISH UP WITH USING, REG0, REG1 PARMS
+.*
+.ST06000 AIF   ('&USING' EQ '').ST06700 NO USING PARAMETER, CONT
+&A       SETA  1                        COUNTER OF NUMBER OF OPERANDS
+&B       SETA  N'&USING                 PICK UP # OF OPTIONS ON USING
+.ST06600 AIF   (&A GT &B).ST06700       NO MORE, CONTINUE
+&K       SETC  '&USING(&A)'             PICK US ADDRESS
+&L       SETC  '&USING(&A+1)'           PICK UP REGISTER
+         AIF   ('&K' EQ '' OR '&L' EQ '').ST09000   MISSING PARMS
+         USING &K,&L
+&A       SETA  &A+2                     POINT TO NEXT SET
+         AGO   .ST06600                 ON TO THE NEXT PAIR
+.*
+.ST06700 AIF   ('&STAMODE' EQ '').ST06780
+         SPACE 1
+         LA    R14,&P.RRR14             POINT INTO CAP EPILOG
+         AIF   ('&SYSSPLV' NE '1').ST06730
+         L     R15,16                   POINT TO CVT
+         TM    116(R15),128             IS THIS MVS/XA ?
+         BZ    &P.CAP00                 NO, DO NOT CAP
+.ST06730 LA    R15,&P.CAP00             POINT AFTER BSM
+         AIF   ('&STAMODE' EQ '24').ST06740
+         O     R15,=X'80000000'         OUR AMODE IS 31
+.ST06740 ANOP  ,
+         BSM   R14,R15                  SAVE AND SET AMODE
+         AIF   ('&STACREG' EQ '').ST06750
+&P.CAP00 LR    &STACREG,R14             SAVE CAP WORD IN REG
+         AGO   .ST06760
+.ST06750 ANOP  ,
+&P.CAP00 ST    R14,&P.CAPWD             SAVE CAP WORD
+.*
+.ST06760 AIF   ('&REG0&REG1' EQ '').ST06800
+         SPACE 1
+.*
+.ST06780 AIF   ('&REG0' EQ '').ST06790  NO REG0, CONTINUE
+         LR    &REG0,R0                 SAVE REGISTER 0
+.ST06790 AIF   ('&REG1' EQ '').ST06800  NO REG1  CONTINUE
+         LR    &REG1,R1                 SAVE REGISTER 1
+.ST06800 SPACE 1
+         MEXIT ,
+.*
+.ST09000 MNOTE 4,'ST1003I - Required Operand Missing On USING Parm'
+         MEXIT ,
+.ST09010 IHBERMAC 1006,NAME
+         MEXIT ,
+.ST09020 IHBERMAC 1304,WKCSECT,WKDSECT
+         MEXIT ,
+.ST09030 IHBERMAC 1020,WKCSECT,PROC
+         MEXIT ,
+.ST09040 MNOTE 12,'ST1004I - SAVE=&SAVE Invalid With Workarea'
+         MEXIT ,
+.ST09050 MNOTE 12,'ST1005I - SVAREA=&SVAREA Invalid With Workarea'
+         MEXIT ,
+.ST09060 MNOTE 12,'ST1006I - R2 Not Supported As Base Register'
+         MEXIT ,
+.ST09070 MNOTE 12,'ST1007I - R3 Not Supported As Base Register'
+.MEND    MEND  ,

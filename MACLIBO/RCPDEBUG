@@ -1,0 +1,19 @@
+         MACRO
+         RCPDEBUG &ON
+         GBLA  &RCPBGN#,&RCPSWS(10)
+         GBLB  &RCPDBUG
+         GBLC  &RCPPRE,&RCPWKDS,&RCPWKCS
+         AIF   ('&ON' EQ '').TSW
+&RCPDBUG SETB 1
+.TSW     AIF   (&RCPDBUG).DEBUG
+         MEXIT
+.DEBUG   MNOTE *,'RCPBGN# Is &RCPBGN#'
+         MNOTE *,'RCPSWS(1) Is &RCPSWS(1)'
+         MNOTE *,'RCPSWS(2) Is &RCPSWS(2)'
+         MNOTE *,'RCPSWS(3) Is &RCPSWS(3)'
+         MNOTE *,'RCPSWS(4) Is &RCPSWS(4)'
+         MNOTE *,'RCPSWS(5) Is &RCPSWS(5)'
+         MNOTE *,'RCPWKCS Is ''&RCPWKCS'''
+         MNOTE *,'RCPWKDS Is ''&RCPWKDS'''
+         MNOTE *,'RCPPRE Is ''&RCPPRE'''
+         MEND

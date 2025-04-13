@@ -1,0 +1,154 @@
+         MACRO ,
+         #STARTWA &LTORG=YES,&EXTRAS=MAYBE,&PATCH=
+.*
+.* DEFINE SYMBOLS NEEDED, NOTE ALL GLOBALS ARE FROM #START MACRO
+.*
+         GBLA  &EXECUTN                 EXECUTE MACRO COUNTER
+         GBLA  &STWAC                   COUNTER FOR DEFERED WA DEFINES
+         GBLB  &STWA                    INDICATES CSECT HAS A WORK AREA
+         GBLB  &STF(16)                 CONTROL FLAG BITS, AS FOLLOWS:
+.*                                       (01) - PROC OPTION CODED
+.*                                       (02) - MAIN OPTION CODED
+.*                                       (03) - LIFO OPTION CODED
+.*                                       (04) - WKCSECT OPTION CODED
+.*                                       (05) - WKDSECT OPTION CODED
+.*                                       (06) - #START HAS BEEN CODED
+.*                                       (07) - ROUTINE IS AN SVC
+.*                                       (08) - WORK FIELDS WANTED
+.*                                       (09) - SVAREA=NO OPTION
+.*                                       (10) - SAVE=YES OPTION
+.*                                       (11) - RSECT=YES OPTION
+.*                                       (12) - SVC=(YES,BRANCH)
+.*                                       (13) - ENUC CAPPING
+.*                                       (14) - PATCH AREA REQUIRED
+.*
+         GBLC  &STPREF                  PREFIX CHARACTERS
+         GBLC  &STWANAM                 WORK AREA NAME
+         GBLC  &STAMODE                 MODULE'S CAPPED AMODE
+         GBLC  &STACREG                 CAPWORD SAVE REGISTER
+         GBLC  &STISASZ                 LIFO ISA SIZE
+         GBLC  &SYSSPLV                 SPLEVEL
+         GBLC  &STWAD(1000)             WORK AREA DEFERED STACK
+         LCLA  &A,&B,&C,&D,&E           LOCAL
+         LCLB  &F,&G,&H,&I,&J           WORK
+         LCLC  &K,&L,&M,&N,&O,&P        SYMBOLS
+.*
+.* INITIALIZE SYMBOLS, SET UP PREFIX, PICK UP ALL OPERANDS
+.*
+&P       SETC  '&STPREF'                MAKE PREFIX EASIER TO WORK WITH
+         AIF   (NOT &STF(6)).ST01200    ERROR - NO #START MACRO CODED
+         AIF   (NOT &STWA).ST01300      ERROR - NO WORK AREA SPECIFIED
+         AIF   ('&LTORG' NE 'YES').ST00100   NO LTORG, CONTINUE
+         SPACE 1
+         AIF   (&EXECUTN EQ 0).ST00090       NO POOL, CONTINUE
+*        #EXEC ,                        EXECUTE POOL
+         #EXEC ,
+         SPACE 1 ,
+.ST00090 ANOP  ,
+         LTORG ,                        LITERAL POOL
+.ST00100 AIF   ('&PATCH' EQ 'NO').ST00110
+         AIF   ('&PATCH' EQ '' AND NOT &STF(14)).ST00110
+         AIF   ('&PATCH' EQ 'YES' OR '&PATCH' EQ 'Y' OR '&PATCH' EQ '')X
+               .ST00105
+         SPACE 1
+         #PATCH F=&PATCH                EXPLICIT PATCH SIZE
+         AGO   .ST00110
+.ST00105 SPACE 1
+         #PATCH ,                       DEFAULT PATCH SIZE
+.ST00110 SPACE 1
+.*
+.* THE FOLLOWING IS FOR WKCSECT OPTION
+.*
+         AIF   (NOT &STF(4)).ST00200    NOT WORK CSECT, CONTINUE
+&STWANAM CSECT ,                        #STARTWA MACRO
+         DS    18F                      SAVE AREA
+         AGO   .ST00500                 CONTINUE
+.*
+.* THE FOLLOWING IS FOR WKDSECT OPTION, WITH OR WITHOUT PROC AND LIFO
+.* OPTIONS, BUT NOT WITH THE MAIN OPTION
+.*
+.ST00200 AIF   (&STF(2)).ST00300        MAIN OPTION, CONTINUE
+&STWANAM DSECT ,                        #STARTWA MACRO
+         DS    18F                      SAVE AREA
+         AGO   .ST00500                 CONTINUE
+.*
+.* THE FOLLOWING IS FOR PROC AND MAIN OPTIONS, BUT NOT LIFO
+.*
+.ST00300 AIF   (&STF(3)).ST00400        LIFO OPTION, CONTINUE
+&STWANAM DSECT ,                        #STARTWA MACRO
+         DS    18F                      STANDARD SAVE AREA
+&P.MCA   DS    0F                       MODULE COMMUNICATIONS AREA
+&P.#O    DS    A                        ORIGIN OF GETMAINED AREA
+         AGO   .ST00500                 CONTINUE
+.*
+.* THE FOLLOWING IS FOR PROC, MAIN, AND LIFO OPTIONS
+.*
+.ST00400 ANOP  ,
+&STWANAM DSECT ,                        #STARTWA MACRO
+         DS    18F                      STANDARD SAVE AREA
+&P.MCA   DS    0F                       MODULE COMMUNICATIONS AREA
+&P.#O    DS    A                        ORIGIN OF GETMAINED AREA
+&P.#GET  DS    V(#####GET)              PTR TO LIFO GET ROUTINE
+&P.#FRE  DS    V(####FREE)              PTR TO LIFO FREE ROUTINE
+&P.#S    DS    A                        PTR TO START OF LIFO STACK
+&P.#E    DS    A                        PTR TO END OF LIFO STACK
+&P.#N    DS    A                        PTR TO NEXT FREE AREA
+.*
+.* THE FOLLOWING IS COMMON TO ALL TYPES OF WORK AREAS
+.*
+.ST00500 ANOP  ,
+         AIF   ('&EXTRAS' EQ 'NO').ST00550
+         AIF   (NOT &STF(8) AND '&EXTRAS' NE 'YES').ST00550
+&P.DBL1  DS    D
+&P.DBL2  DS    D
+&P.DBL3  DS    D
+&P.DBL4  DS    D
+&P.WORD1 DS    F
+&P.WORD2 DS    F
+&P.WORD3 DS    F
+&P.WORD4 DS    F
+&P.HALF1 DS    H
+&P.HALF2 DS    H
+&P.HALF3 DS    H
+&P.HALF4 DS    H
+&P.BYTE1 DS    C
+&P.BYTE2 DS    C
+&P.BYTE3 DS    C
+&P.BYTE4 DS    C
+&P.FLAG1 DS    X
+&P.FLAG2 DS    X
+&P.FLAG3 DS    X
+&P.FLAG4 DS    X
+.ST00550 ANOP  ,
+&STF(8)  SETB  0                        TURN BACK OFF
+&P.RCODE DS    F                        RETURN CODE FIELD
+         AIF   ('&STAMODE' EQ '' OR '&STACREG' NE '').ST00580
+&P.CAPWD DS    A                        USED BY CAPPING SUPPORT
+.ST00580 ANOP  ,
+&A       SETA  &STWAC                   PICK UP # DEFERRED WORK FIELDS
+&B       SETA  -1                       SET UP INDEX COUNTER
+.ST00600 ANOP  ,                        DETERMINE IF ITS A DS OR A DC
+&B       SETA  &B+2                     POINT TO NEXT ELEMENT ON STACK
+         AIF   (&B GE &A).ST01100       NO MORE, CONTINUE
+&K       SETC  '&STWAD(&B)'             PICK UP LABEL
+&L       SETC  '&STWAD(&B+1)'           PICK UP OPERAND
+&C       SETA  K'&L                     PICK UP LENGTH OF OPERAND
+         AIF   ('&L'(&C,1) EQ '''').ST00900   THIS IS A DC
+         AIF   ('&L'(&C,1) NE ')').ST01000    THIS IS A DS
+.ST00700 ANOP  ,                        LOOK FOR LEFT PARENTHESIS,
+&C       SETA  &C-1                     BY SCANNING BACKWARDS
+         AIF   (&C LT 2).ST01000        ERROR - NO LEFT PARENTHESIS
+         AIF   ('&L'(&C,1) EQ '(').ST00800   FOUND THE LEFT
+         AGO   .ST00700                 GO CONTINUE SCAN
+.ST00800 AIF   ('&L'(&C-1,1) EQ 'L').ST01000   ITS A DS WITH LENGTH
+.ST00900 ANOP  ,                        DEFINE IT AS A DC
+&K       DC    &L                       DEFERRED WORK FIELD
+         AGO   .ST00600                 GO GET NEXT ELEMENT ON STACK
+.ST01000 ANOP  ,                        DEFINE IT AS A DS
+&K       DS    &L                       DEFERRED WORK FIELD
+         AGO   .ST00600                 GO GET NEXT ELEMENT ON STACK
+.ST01100 MEXIT ,                        EXIT
+.ST01200 MNOTE 4,'ST3001A - #START Macro Not Coded In This Program'
+         MEXIT ,
+.ST01300 MNOTE 4,'ST3002A - #START Macro Not Defined With Workarea'
+.MEND    MEND  ,

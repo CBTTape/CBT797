@@ -1,0 +1,19 @@
+         MACRO ,
+&LABEL   #PATCH &F=5,&ORG=
+         GBLA  &#PATCHN
+         LCLA  &N
+         LCLC  &BEGIN
+&#PATCHN SETA  &#PATCHN+1
+&N       SETA  &#PATCHN
+&BEGIN   SETC  '&SYSECT'
+         AIF   ('&ORG' EQ '').Z
+&BEGIN   SETC  '&ORG'
+.Z       PUSH  PRINT
+         PRINT ON,GEN,DATA
+@PSIZE&N EQU   ((*-&BEGIN+99)/100)*&F
+@PATCH&N DC    25S(*)                   MODULE PATCH AREA
+         ORG   @PATCH&N
+&LABEL   DC    ((@PSIZE&N+1)/2)S(*)
+         ORG   ,
+         POP   PRINT
+         MEND  ,
